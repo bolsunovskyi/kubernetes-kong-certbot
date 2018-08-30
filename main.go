@@ -1,37 +1,57 @@
 package main
 
 import (
+	"flag"
 	"log"
-	"os"
-	"github.com/bolsunovskyi/kubernetes-kong-certbot/kong"
 	"net/http"
+	"os"
+	"time"
+
+	"github.com/bolsunovskyi/kubernetes-kong-certbot/kong"
+	"github.com/joho/godotenv"
+	"github.com/kelseyhightower/envconfig"
+	"gopkg.in/go-playground/validator.v9"
 )
 
+func init() {
+	if _, err := os.Stat(".env"); err == nil {
+		if err := godotenv.Load(".env"); err != nil {
+			log.Fatalln("Unable to load env file")
+		}
+	}
+
+}
+
+type Config struct {
+	CertBotPath     string `validate:"required"`
+	Email           string `validate:"required"`
+	AuthHeaderKey   string
+	AuthHeaderValue string
+	KongAdminPath   string `validate:"required"`
+	Domain          string `validate:"required"`
+	Listen          string `validate:"required"`
+}
+
 func main() {
-	svc := MakeService()
-
-	if certbotPath := os.Getenv("CERTBOT_PATH"); certbotPath != "" {
-		svc.certBotPath = certbotPath
+	cnf := Config{Listen: ":8000"}
+	if err := envconfig.Process("app", &cnf); err != nil {
+		log.Fatalln(err)
 	}
 
-	if email := os.Getenv("EMAIL"); email != "" {
-		svc.email = email
+	flag.StringVar(&cnf.Domain, "d", "", "domain for certificate")
+	flag.Parse()
+
+	if err := validator.New().Struct(cnf); err != nil {
+		log.Fatalln(err)
 	}
 
-	authHeaderKey := os.Getenv("AUTH_HEADER_KEY")
-	authHeaderValue := os.Getenv("AUTH_HEADER_VALUE")
-	kongAdminPath := os.Getenv("KONG_ADMIN_PATH")
-	if kongAdminPath == "" {
-		log.Fatalln("kong path is not specified")
+	var authHeader *kong.AuthHeader
+	if cnf.AuthHeaderKey != "" && cnf.AuthHeaderValue != "" {
+		authHeader = &kong.AuthHeader{Key: cnf.AuthHeaderKey, Value: cnf.AuthHeaderValue}
 	}
 
-
-	if authHeaderKey != "" && authHeaderValue != "" {
-		svc.kongClient = kong.Make(http.DefaultClient, &kong.AuthHeader{Value: authHeaderValue, Key: authHeaderKey},
-		kongAdminPath)
-	} else {
-		svc.kongClient = kong.Make(http.DefaultClient, nil, kongAdminPath)
-	}
+	svc := MakeService(cnf.CertBotPath, cnf.Email, cnf.Listen,
+		kong.Make(&http.Client{Timeout: time.Second * 30}, authHeader, cnf.KongAdminPath))
 
 	if certs, err := svc.kongClient.GetCertificates(); err != nil {
 		log.Fatalln(err)
@@ -39,7 +59,13 @@ func main() {
 		log.Printf("certificates on server: %d\n", certs.Total)
 	}
 
-	if err := svc.StartRouter(); err != nil {
+	go func() {
+		if err := svc.StartRouter(); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+	//
+	if err := svc.CertOnly(cnf.Domain); err != nil {
 		log.Fatalln(err)
 	}
 }

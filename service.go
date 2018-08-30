@@ -1,25 +1,30 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/bolsunovskyi/kubernetes-kong-certbot/kong"
+	"github.com/gin-gonic/gin"
 )
 
 type Service struct {
-	certBotPath   string
-	email         string
-	kongClient KongClient
+	certBotPath  string
+	email        string
+	routerListen string
+	kongClient   KongClient
 }
 
 type KongClient interface {
 	AddCertificate(cert, key, domain string) error
 	GetCertificates() (*kong.CertListResponse, error)
+	UpdateOrCreateCertificate(host, cert, key string) error
+	DeleteCertificate(host string) error
 }
 
-func MakeService() *Service {
+func MakeService(certBotPath, email, routerListen string, kongClient KongClient) *Service {
 	return &Service{
-		certBotPath:   "certbot",
-		email:         "",
+		certBotPath:  certBotPath,
+		email:        email,
+		kongClient:   kongClient,
+		routerListen: routerListen,
 	}
 }
 
@@ -29,9 +34,8 @@ func (s Service) StartRouter() error {
 		context.String(200, "ready")
 	})
 	r.Static("/.well-known/", "./static/.well-known/")
-	r.POST("/certonly/:domain", s.certOnly)
 
-	if err := r.Run(":8000"); err != nil {
+	if err := r.Run(s.routerListen); err != nil {
 		return err
 	}
 

@@ -1,20 +1,13 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"os/exec"
+	"io/ioutil"
 	"log"
 	"os"
-	"io/ioutil"
+	"os/exec"
 )
 
-func (s Service) certOnly(context *gin.Context) {
-	domain := context.Param("domain")
-	if domain == "" {
-		context.Status(400)
-		return
-	}
-
+func (s Service) CertOnly(domain string) error {
 	log.Println("certonly for", domain)
 
 	cmd := exec.Command(s.certBotPath, "--config-dir", "./certbot/configs/", "--work-dir", "./certbot/work/",
@@ -22,38 +15,31 @@ func (s Service) certOnly(context *gin.Context) {
 		"--agree-tos", "--keep-until-expiring")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		context.String(500, err.Error())
-		return
+	if err := cmd.Run(); err != nil {
+		return err
 	}
 
-	context.String(200, "certonly for %s\n", domain)
+	cert, err := os.Open("./certbot/configs/live/" + domain + "/fullchain.pem")
+	if err != nil {
+		return err
+	}
+	defer cert.Close()
+	certBytes, _ := ioutil.ReadAll(cert)
 
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.Println(err)
-			return
-		}
+	key, err := os.Open("./certbot/configs/live/" + domain + "/privkey.pem")
+	if err != nil {
+		return err
+	}
+	defer cert.Close()
+	keyBytes, _ := ioutil.ReadAll(key)
 
-		cert, err := os.Open("./certbot/configs/live/"+domain+"/fullchain.pem")
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		defer cert.Close()
-		certBytes, _ := ioutil.ReadAll(cert)
+	if err := s.kongClient.DeleteCertificate(domain); err != nil {
+		log.Println(err)
+	}
 
-		key, err := os.Open("./certbot/configs/live/"+domain+"/privkey.pem")
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		defer cert.Close()
-		keyBytes, _ := ioutil.ReadAll(key)
-		//TODO: delete by SNIS before add
-		if err := s.kongClient.AddCertificate(string(certBytes), string(keyBytes), domain); err != nil {
-			log.Println(err)
-			return
-		}
-	}()
+	if err := s.kongClient.AddCertificate(string(certBytes), string(keyBytes), domain); err != nil {
+		return err
+	}
+
+	return nil
 }
