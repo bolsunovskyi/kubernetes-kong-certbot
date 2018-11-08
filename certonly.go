@@ -33,13 +33,5 @@ func (s Service) CertOnly(domain string) error {
 	defer cert.Close()
 	keyBytes, _ := ioutil.ReadAll(key)
 
-	if err := s.kongClient.DeleteCertificate(domain); err != nil {
-		log.Println(err)
-	}
-
-	if err := s.kongClient.AddCertificate(string(certBytes), string(keyBytes), domain); err != nil {
-		return err
-	}
-
-	return nil
+	return s.kongClient.UpdateOrCreateCertificate(domain, string(certBytes), string(keyBytes))
 }

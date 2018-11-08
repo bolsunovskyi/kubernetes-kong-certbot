@@ -112,7 +112,7 @@ func (c Client) UpdateCertificate(host, cert, key string) error {
 		"key":  key,
 	})
 
-	rq, _ := http.NewRequest("PATCH", c.path+"/certificates"+host, bytes.NewReader(js))
+	rq, _ := http.NewRequest("PATCH", c.path+"/certificates/"+host, bytes.NewReader(js))
 	_, err := c.sendRequest(rq)
 	return err
 }
@@ -124,13 +124,13 @@ func (c Client) UpdateOrCreateCertificate(host, cert, key string) error {
 		"snis": []string{host},
 	})
 
-	rq, _ := http.NewRequest("PUT", c.path+"/certificates"+host, bytes.NewReader(js))
+	rq, _ := http.NewRequest("PUT", c.path+"/certificates/"+host, bytes.NewReader(js))
 	_, err := c.sendRequest(rq)
 	return err
 }
 
 func (c Client) DeleteCertificate(host string) error {
-	rq, _ := http.NewRequest("DELETE", c.path+"/certificates"+host, nil)
+	rq, _ := http.NewRequest("DELETE", c.path+"/certificates/"+host, nil)
 	_, err := c.sendRequest(rq)
 	return err
 }
